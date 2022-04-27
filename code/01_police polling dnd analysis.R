@@ -113,22 +113,23 @@ chi <- l2 %>%
 
 #city turnout dnd
 dnd <- city_turnout %>% 
-  filter(precinct != "CHICAGO 06-11") %>% 
   mutate(police = ifelse(precinct %in% precinct_2018, 1, 
-                  ifelse(election_year == 2016 && precint %in% precinct_2016, 1,
-                  ifelse(election_year == 2014 && precint %in% precinct_2014, 1,
-                  ifelse(election_year == 2011 && precint %in% precinct_2012, 1, 
-                         ifelse(election_year %in% c(2012,2014,2016) && precinct == 611, 0,
-                         ifelse(election_year == 2012 && precinct == 3416, 0, 0)))))),
-         time = ifelse(election_year == 2020, 0, 1), # makes no sense
-         did = time*police,
-         police = as.character(police)) %>% 
+                  ifelse(election_year == 2016 & precinct %in% precinct_2016, 1,
+                  ifelse(election_year == 2014 & precinct %in% precinct_2014, 1,
+                  ifelse(election_year == 2012 & precinct %in% precinct_2012, 1, 0))))) %>% 
+mutate(police = ifelse(election_year %in% c(2012, 2014, 2016) & precinct == "CHICAGO 06-11", 0,
+                  ifelse(election_year == 2012 & precinct == "CHICAGO 34-16", 0, police))) %>% 
   mutate(election_year = ifelse(election_year == 2012, 1,
                                 ifelse(election_year == 2014, 2,       
                                 ifelse(election_year == 2016, 3,
-                                ifelse(election_year == 2018, 5,       
-                                ifelse(election_year == 2020, 6, 0))))))
-         
+                                ifelse(election_year == 2018, 4,       
+                                ifelse(election_year == 2020, 5, 0))))),
+         election_year = as.integer(as.numeric(election_year))) %>% 
+  filter(precinct %in% c(precinct_2012, precinct_2014, precinct_2016, precinct_2018)) %>% 
+  mutate(police = ifelse(election_year == 5, 0, police))
+
+
+#for regular d-in-d
 didreg = lm(turnout ~ police + time + did, data = subset(dnd,election_year>=2018))
 summary(didreg)
 
@@ -141,13 +142,42 @@ ggplot(dnd, aes(election_year, turnout, color = police)) +
 
 
 #####PANEL MATCH####
-library(devtools)
-install_github("insongkim/PanelMatch", dependencies=TRUE)
+#library(devtools)
+#install_github("insongkim/PanelMatch", dependencies=TRUE)
 library(PanelMatch)
- 
-DisplayTreatment(unit.id = "time",
+
+
+DisplayTreatment(unit.id = "precinct",
                  time.id = "election_year", legend.position = "none",
                  xlab = "election_year", ylab = "precinct",
-                 treatment = "police", data = dnd)
+                 treatment = "police", data = filter(dnd, precinct %in% c(precinct_2012, precinct_2014, precinct_2016, precinct_2018)))
+
+dnd <- dnd %>% 
+  mutate(precinct = gsub("CHICAGO ", "", precinct),
+         precinct = gsub("-", "", precinct),
+         precinct = as.integer(as.character(precinct)),
+         ballots_cast = as.integer(as.character(ballots_cast)),
+         registered_voters = as.integer(as.character(registered_voters)))
+
+# Create the matched sets
+PM.results.none <- PanelMatch(lag = 1, time.id = "election_year", unit.id = "precinct",
+                              treatment = "police", refinement.method = "none",
+                              data = dnd, match.missing = TRUE,
+                              size.match = 5, qoi = "att", outcome.var = "turnout",
+                              lead = 0:1, forbid.treatment.reversal = FALSE,
+                              use.diagonal.variance.matrix = TRUE)
+# Extract the first matched set
+mset <- PM.results.none$att[1]
+
+# Use the DisplayTreatment function to visualize the
+# treated unit and matched controls.
+DisplayTreatment(unit.id = "precinct",
+                 time.id = "election_year", legend.position = "none",
+                 xlab = "election_year", ylab = "precinct",
+                 treatment = "police", data = dnd,
+                 matched.set = mset, # this way we highlight the particular set
+                 show.set.only = TRUE)
+
+
 
 
